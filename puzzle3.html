@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jason's 4x4 Puzzle (2025)</title>
+  <meta name="description" content="Jason's 4x4 sliding puzzle with 10 endangered animals (2025)" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+
+    // ---------- Utility: time formatting ----------
+    const fmtTime = (ms) => {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    };
+
+    // ---------- Simple WebAudio melody (on level complete) ----------
+    function playVictoryMelody() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        const notes = [
+          { f: 523.25, t: 0.0, d: 0.18 }, // C5
+          { f: 659.25, t: 0.2, d: 0.18 }, // E5
+          { f: 783.99, t: 0.4, d: 0.18 }, // G5
+          { f: 1046.5, t: 0.6, d: 0.24 }, // C6
+          { f: 987.77, t: 0.88, d: 0.16 }, // B5
+          { f: 1046.5, t: 1.06, d: 0.4 }, // C6
+        ];
+        const master = ctx.createGain();
+        master.gain.value = 0.08;
+        master.connect(ctx.destination);
+        notes.forEach((n) => {
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.value = n.f;
+          osc.connect(g);
+          g.connect(master);
+          const start = ctx.currentTime + n.t;
+          const end = start + n.d;
+          g.gain.setValueAtTime(0, start);
+          g.gain.linearRampToValueAtTime(1, start + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, end);
+          osc.start(start);
+          osc.stop(end + 0.01);
+        });
+        setTimeout(() => ctx.close(), 2200);
+      } catch (e) {}
+    }
+
+    // ---------- SVG helpers ----------
+    const svgWrapper = (inner, bg = "#F5F7FB") => `<?xml version='1.0' encoding='UTF-8'?>
+    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'>
+      <defs>
+        <linearGradient id='g1' x1='0' y1='0' x2='1' y2='1'>
+          <stop offset='0%' stop-color='${bg}'/>
+          <stop offset='100%' stop-color='#FFFFFF'/>
+        </linearGradient>
+        <filter id='soft' x='-20%' y='-20%' width='140%' height='140%'>
+          <feDropShadow dx='0' dy='4' stdDeviation='6' flood-color='#c7cdda' flood-opacity='0.6'/>
+        </filter>
+      </defs>
+      <rect x='0' y='0' width='600' height='600' fill='url(#g1)'/>
+      ${inner}
+    </svg>`;
+
+    const toDataUrl = (svg) => `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+
+    const eyesCheeks = (cx1, cx2, cy, cheekY, colorEye = "#2B2D42") => `
+      <g>
+        <circle cx='${cx1}' cy='${cy}' r='18' fill='${colorEye}'/>
+        <circle cx='${cx2}' cy='${cy}' r='18' fill='${colorEye}'/>
+        <circle cx='${cx1-5}' cy='${cy-5}' r='5' fill='#fff' opacity='0.9'/>
+        <circle cx='${cx2-5}' cy='${cy-5}' r='5' fill='#fff' opacity='0.9'/>
+        <circle cx='${cx1}' cy='${cheekY}' r='10' fill='#FFADB0' opacity='0.7'/>
+        <circle cx='${cx2}' cy='${cheekY}' r='10' fill='#FFADB0' opacity='0.7'/>
+      </g>
+    `;
+
+    const svgAmurLeopard = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='220' ry='170' fill='#FFD16A'/>
+        <circle cx='200' cy='250' r='55' fill='#FFD16A'/>
+        <circle cx='400' cy='250' r='55' fill='#FFD16A'/>
+        <ellipse cx='300' cy='310' rx='150' ry='110' fill='#FFC24D'/>
+        ${eyesCheeks(260, 340, 300, 325)}
+        <ellipse cx='300' cy='340' rx='25' ry='18' fill='#444'/>
+        ${Array.from({length:14}).map((_,i)=>{
+          const ang = (i/14)*Math.PI*2; const r=120; const x=300+Math.cos(ang)*r; const y=320+Math.sin(ang)*r; return `<circle cx='${x}' cy='${y}' r='12' fill='#8C5A2F'/>`;}).join("")}
+      </g>
+    `);
+
+    const svgJavanRhino = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='230' ry='160' fill='#B7C4CF'/>
+        <path d='M190 290 q-40 -30 10 -60 q50 20 90 30' fill='#E8E8E8'/>
+        <ellipse cx='300' cy='320' rx='160' ry='110' fill='#A0AFBA'/>
+        <path d='M340 280 l40 -40 l10 30 z' fill='#EDE7D9'/>
+        ${eyesCheeks(260, 340, 310, 335, "#2b2d42")}
+        <ellipse cx='300' cy='355' rx='28' ry='20' fill='#444'/>
+      </g>
+    `);
+
+    const svgVaquita = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='330' rx='230' ry='140' fill='#A6D3E8'/>
+        <path d='M130 330 q170 -140 340 0 q-170 140 -340 0' fill='#92C4DB'/>
+        ${eyesCheeks(260, 340, 310, 335, "#1f2937")}
+        <ellipse cx='300' cy='355' rx='26' ry='18' fill='#374151'/>
+        <circle cx='180' cy='300' r='20' fill='#7EB6CC'/>
+        <circle cx='420' cy='300' r='20' fill='#7EB6CC'/>
+      </g>
+    `, "#E8F7FF");
+
+    const svgKakapo = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='210' ry='170' fill='#CFE8A9'/>
+        <ellipse cx='300' cy='330' rx='160' ry='120' fill='#B4D98A'/>
+        ${eyesCheeks(260, 340, 310, 335, "#2b2d42")}
+        <path d='M300 330 q20 10 0 20 q-20 -10 0 -20' fill='#F3F6E6'/>
+      </g>
+    `, "#F3F9EC");
+
+    const svgOrangutan = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='230' ry='170' fill='#F3B081'/>
+        <ellipse cx='300' cy='330' rx='170' ry='130' fill='#E59A63'/>
+        ${eyesCheeks(260, 340, 305, 330)}
+        <ellipse cx='300' cy='350' rx='28' ry='20' fill='#444'/>
+      </g>
+    `, "#FFF5EE");
+
+    const svgSaola = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='220' ry='160' fill='#D6C8B8'/>
+        <rect x='280' y='180' width='8' height='100' fill='#3B3B3B'/>
+        <rect x='312' y='180' width='8' height='100' fill='#3B3B3B'/>
+        <ellipse cx='300' cy='330' rx='160' ry='110' fill='#C9B9A6'/>
+        ${eyesCheeks(260, 340, 310, 335)}
+        <ellipse cx='300' cy='355' rx='26' ry='18' fill='#444'/>
+      </g>
+    `);
+
+    const svgHawksbill = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='210' ry='160' fill='#A1DEC9'/>
+        <ellipse cx='300' cy='330' rx='160' ry='120' fill='#88CDB7'/>
+        ${Array.from({length:10}).map((_,i)=>{
+          const x=220+(i%5)*40; const y=290+Math.floor(i/5)*40; return `<rect x='${x}' y='${y}' width='32' height='24' rx='6' fill='#6DB6A1'/>`;}).join("")}
+        ${eyesCheeks(260, 340, 310, 335, "#1f2937")}
+        <ellipse cx='300' cy='355' rx='26' ry='18' fill='#374151'/>
+      </g>
+    `, "#E9FBF6");
+
+    const svgGorilla = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='230' ry='170' fill='#B6BCC6'/>
+        <ellipse cx='300' cy='330' rx='170' ry='120' fill='#9DA5B1'/>
+        ${eyesCheeks(260, 340, 305, 330, "#111827")}
+        <ellipse cx='300' cy='350' rx='30' ry='22' fill='#111827'/>
+      </g>
+    `, "#F1F3F6");
+
+    const svgPhilippineEagle = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='210' ry='160' fill='#E8E1D5'/>
+        <path d='M180 270 q120 -140 240 0 q-120 140 -240 0' fill='#D9CFBF'/>
+        ${eyesCheeks(260, 340, 300, 325, "#1f2937")}
+        <path d='M300 330 l25 30 h-50 z' fill='#F5D78A'/>
+      </g>
+    `);
+
+    const svgPangolin = () => svgWrapper(`
+      <g filter='url(#soft)'>
+        <ellipse cx='300' cy='360' rx='220' ry='160' fill='#D7B9A7'/>
+        ${Array.from({length:18}).map((_,i)=>{
+          const row = Math.floor(i/6); const col = i%6; const x=170+col*45; const y=260+row*35; const c = row%2? '#C79D87':'#CFA894';
+          return `<path d='M${x} ${y} h40 l-20 24 z' fill='${c}'/>`;}).join("")}
+        ${eyesCheeks(260, 340, 310, 335)}
+        <ellipse cx='300' cy='355' rx='26' ry='18' fill='#444'/>
+      </g>
+    `);
+
+    const ANIMALS = [
+      { name: "Amur Leopard", maker: svgAmurLeopard },
+      { name: "Javan Rhino", maker: svgJavanRhino },
+      { name: "Vaquita", maker: svgVaquita },
+      { name: "Kakapo", maker: svgKakapo },
+      { name: "Sumatran Orangutan", maker: svgOrangutan },
+      { name: "Saola", maker: svgSaola },
+      { name: "Hawksbill Sea Turtle", maker: svgHawksbill },
+      { name: "Mountain Gorilla", maker: svgGorilla },
+      { name: "Philippine Eagle", maker: svgPhilippineEagle },
+      { name: "Sunda Pangolin", maker: svgPangolin },
+    ];
+
+    const N = 4, SIZE = N * N;
+    const idxToRC = (i) => ({ r: Math.floor(i / N), c: i % N });
+    const rcToIdx = (r, c) => r * N + c;
+
+    function isSolvable(arr, emptyIndex) {
+      const tiles = arr.filter((x) => x !== -1);
+      let inv = 0;
+      for (let i = 0; i < tiles.length; i++) {
+        for (let j = i + 1; j < tiles.length; j++) {
+          if (tiles[i] > tiles[j]) inv++;
+        }
+      }
+      const { r } = idxToRC(emptyIndex);
+      const rowFromBottom = N - r;
+      return (inv + rowFromBottom) % 2 === 0;
+    }
+
+    function shuffledPositions(blankIndex) {
+      let arr = Array.from({ length: SIZE }, (_, i) => i);
+      arr[blankIndex] = -1;
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      if (!isSolvable(arr, blankIndex)) {
+        const i = arr.findIndex((x) => x !== -1);
+        const j = arr.findIndex((x, k) => x !== -1 && k !== i);
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function neighborsOfEmpty(state) {
+      const ei = state.indexOf(-1);
+      const { r, c } = idxToRC(ei);
+      const neigh = [];
+      if (r > 0) neigh.push(rcToIdx(r - 1, c));
+      if (r < N - 1) neigh.push(rcToIdx(r + 1, c));
+      if (c > 0) neigh.push(rcToIdx(r, c - 1));
+      if (c < N - 1) neigh.push(rcToIdx(r, c + 1));
+      return { emptyIndex: ei, neigh };
+    }
+
+    function isComplete(state) {
+      for (let i = 0; i < SIZE - 1; i++) if (state[i] !== i) return false;
+      return state[SIZE - 1] === -1;
+    }
+
+    function App() {
+      const [level, setLevel] = useState(0);
+      const [previewMode, setPreviewMode] = useState(true);
+      const [imgUrl, setImgUrl] = useState("");
+      const [animalName, setAnimalName] = useState("");
+      const [state, setState] = useState([]);
+      const [startTime, setStartTime] = useState(0);
+      const [elapsed, setElapsed] = useState(0);
+      const [running, setRunning] = useState(false);
+      const [cornerPreview, setCornerPreview] = useState(false);
+      const [records, setRecords] = useState(() => {
+        const raw = localStorage.getItem("jasons_puzzle_records_v1");
+        return raw ? JSON.parse(raw) : [];
+      });
+      const [showWin, setShowWin] = useState(false);
+      const timerRef = useRef(null);
+      const dragInfoRef = useRef(null);
+
+      const tileSize = 320;        // total grid size
+      const tileStep = tileSize / 4; // size of one tile
+
+      useEffect(() => {
+        const a = ANIMALS[level];
+        setAnimalName(a.name);
+        const url = toDataUrl(a.maker());
+        setImgUrl(url);
+        setPreviewMode(true);
+        setCornerPreview(false);
+        setRunning(false);
+        setElapsed(0);
+        setState([]);
+      }, [level]);
+
+      useEffect(() => {
+        if (running) {
+          timerRef.current = setInterval(() => setElapsed(Date.now() - startTime), 250);
+        } else if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+      }, [running, startTime]);
+
+      const startLevel = () => {
+        const blank = Math.floor(Math.random() * SIZE);
+        let arr = shuffledPositions(blank);
+        setState(arr);
+        setPreviewMode(false);
+        setCornerPreview(true);
+        setStartTime(Date.now());
+        setElapsed(0);
+        setRunning(true);
+      };
+
+      const moveTile = (tileIndex) => {
+        setState((prev) => {
+          const { emptyIndex, neigh } = neighborsOfEmpty(prev);
+          if (!neigh.includes(tileIndex)) return prev;
+          const next = [...prev];
+          [next[emptyIndex], next[tileIndex]] = [next[tileIndex], next[emptyIndex]];
+          if (isComplete(next)) onWin();
+          return next;
+        });
+      };
+
+      const onWin = () => {
+        setRunning(false);
+        const timeMs = Date.now() - startTime;
+        setElapsed(timeMs);
+        setShowWin(true);
+        playVictoryMelody();
+        const newRecords = [...records];
+        newRecords[level] = { level: level + 1, name: animalName, ms: timeMs, ts: Date.now() };
+        setRecords(newRecords);
+        localStorage.setItem("jasons_puzzle_records_v1", JSON.stringify(newRecords));
+      };
+
+      const onPointerDown = (e, i) => {
+        const st = state;
+        if (!st || st.length !== SIZE) return;
+        const { emptyIndex, neigh } = neighborsOfEmpty(st);
+        if (!neigh.includes(i)) return;
+        const dir = (() => {
+          const { r: er, c: ec } = idxToRC(emptyIndex);
+          const { r: tr, c: tc } = idxToRC(i);
+          if (er === tr) return ec > tc ? "right" : "left";
+          if (ec === tc) return er > tr ? "down" : "up";
+          return null;
+        })();
+        if (!dir) return;
+        const el = e.currentTarget;
+        el.setPointerCapture?.(e.pointerId);
+        dragInfoRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          dir, i, el, moved: false,
+        };
+      };
+
+      const onPointerMove = (e) => {
+        const info = dragInfoRef.current; if (!info) return;
+        const dx = e.clientX - info.startX;
+        const dy = e.clientY - info.startY;
+        let tx = 0, ty = 0;
+        if (info.dir === "left" || info.dir === "right") {
+          tx = Math.max(Math.min(dx, tileStep), -tileStep);
+        } else if (info.dir === "up" || info.dir === "down") {
+          ty = Math.max(Math.min(dy, tileStep), -tileStep);
+        }
+        info.el.style.transform = `translate(${tx}px, ${ty}px)`;
+        info.moved = Math.abs(tx) + Math.abs(ty) > 4;
+      };
+
+      const onPointerUp = (e) => {
+        const info = dragInfoRef.current; if (!info) return;
+        const style = info.el.style;
+        const matrix = style.transform;
+        let movedEnough = false;
+        if (matrix && matrix.startsWith("translate(")) {
+          const vals = matrix.replace("translate(", "").replace(")", "").split(",");
+          const tx = parseFloat(vals[0]);
+          const ty = parseFloat(vals[1]);
+          if (info.dir === "left" || info.dir === "right") movedEnough = Math.abs(tx) > tileStep / 2;
+          if (info.dir === "up" || info.dir === "down") movedEnough = Math.abs(ty) > tileStep / 2;
+        }
+        style.transform = "translate(0px, 0px)";
+        if (movedEnough) moveTile(info.i);
+        dragInfoRef.current = null;
+      };
+
+      const tiles = useMemo(() => {
+        if (!imgUrl || state.length !== SIZE) return [];
+        const positions = [];
+        for (let i = 0; i < SIZE; i++) {
+          const row = Math.floor(i / N);
+          const col = i % N;
+          const bgX = (col / (N - 1)) * 100;
+          const bgY = (row / (N - 1)) * 100;
+          positions.push({ bgX, bgY });
+        }
+        return state.map((tile, i) => {
+          if (tile === -1) return { i, tile, empty: true };
+          const { bgX, bgY } = positions[tile];
+          return { i, tile, empty: false, bgX, bgY };
+        });
+      }, [imgUrl, state]);
+
+      const nextLevel = () => {
+        setShowWin(false);
+        if (level < ANIMALS.length - 1) setLevel(level + 1);
+        else {
+          setPreviewMode(true);
+          setCornerPreview(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen w-full bg-gradient-to-b from-slate-100 to-white text-slate-800"
+             onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+          <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/70 backdrop-blur sticky top-0 z-20">
+            <div className="flex items-baseline gap-3">
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Jason's 4x4 Puzzle</h1>
+              <span className="text-xs md:text-sm px-2 py-0.5 rounded-full bg-slate-800 text-white">2025</span>
+            </div>
+            <div className="text-sm">
+              Level <span className="font-semibold">{level + 1}</span>/10 · { (running || (!previewMode && state.length===SIZE)) ? <span className="tabular-nums">{fmtTime(elapsed)}</span> : "00:00" }
+            </div>
+          </header>
+
+          <main className="max-w-5xl mx-auto px-4 pb-24 pt-6">
+            {cornerPreview && (
+              <div className="fixed right-4 bottom-4 z-10 select-none">
+                <div className="bg-white rounded-2xl shadow-lg p-2 border border-slate-200">
+                  <div className="w-28 h-28 rounded-xl overflow-hidden">
+                    <img src={imgUrl} alt={animalName} className="w-full h-full object-cover"/>
+                  </div>
+                  <div className="text-center text-xs mt-1 text-slate-600">{animalName}</div>
+                </div>
+              </div>
+            )}
+
+            {previewMode && (
+              <div className="grid md:grid-cols-2 gap-8 items-center">
+                <div className="rounded-3xl overflow-hidden bg-white shadow-lg border border-slate-200">
+                  <img src={imgUrl} alt={animalName} className="w-full h-[360px] object-cover"/>
+                </div>
+                <div>
+                  <h2 className="text-3xl font-bold mb-2">Level {level + 1}: {animalName}</h2>
+                  <p className="text-slate-600 mb-6">시작을 누르면 그림이 모서리에 미니맵으로 보입니다. 빈 칸은 매판 랜덤이며, 인접 조각을 드래그/탭으로 이동하세요.</p>
+                  <button onClick={startLevel} className="px-5 py-3 rounded-xl bg-slate-800 text-white font-semibold shadow hover:shadow-md active:scale-[0.98]">Start Puzzle</button>
+                  <div className="mt-6">
+                    <h3 className="font-semibold mb-2">기록 (걸린 시간)</h3>
+                    <ul className="text-sm space-y-1">
+                      {ANIMALS.map((a, i) => (
+                        <li key={i} className="flex justify-between border-b border-slate-100 py-1">
+                          <span>Lv {i + 1}. {a.name}</span>
+                          <span className="tabular-nums">{(JSON.parse(localStorage.getItem("jasons_puzzle_records_v1")||"[]")[i]?.ms) ? fmtTime(JSON.parse(localStorage.getItem("jasons_puzzle_records_v1"))[i].ms) : "—"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!previewMode && (
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-slate-600">드래그 또는 탭으로 인접 조각을 이동할 수 있습니다.</div>
+                <div className="relative grid grid-cols-4 grid-rows-4 bg-white rounded-3xl p-0 shadow-lg border border-slate-200 select-none gap-0 overflow-hidden"
+                     style={{ width: 320, height: 320 }}>
+                  {tiles.map((t) => (
+                    <div key={t.i}
+                      className={"rounded-none flex items-center justify-center text-xl font-bold " + (t.empty ? "bg-white" : "bg-transparent")}
+                      style={{
+                        width: 320 / 4,
+                        height: 320 / 4,
+                        backgroundImage: t.empty ? "none" : `url(${imgUrl})`,
+                        backgroundSize: "400% 400%",
+                        backgroundPosition: t.empty ? undefined : `${t.bgX}% ${t.bgY}%`,
+                        touchAction: "none",
+                        transition: "transform 120ms ease",
+                        cursor: t.empty ? "default" : "grab",
+                        boxShadow: t.empty ? "inset 0 0 0 2px rgba(15,23,42,0.15)" : "inset 0 0 0 1px rgba(15,23,42,0.06)",
+                      }}
+                      onClick={() => moveTile(t.i)}
+                      onPointerDown={(e) => onPointerDown(e, t.i)}
+                    >
+                    </div>
+                  ))}
+                </div>
+                <div className="text-sm text-slate-500">빈 칸 최종 위치는 우하단입니다. 모든 조각이 제자리를 찾으면 클리어!</div>
+              </div>
+            )}
+          </main>
+
+          {showWin && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-30" onClick={() => setShowWin(false)}>
+              <div className="bg-white rounded-3xl shadow-xl border border-slate-200 max-w-xl w-[92vw] p-4" onClick={(e)=>e.stopPropagation()}>
+                <div className="rounded-2xl overflow-hidden mb-3">
+                  <img src={imgUrl} alt={animalName} className="w-full h-[280px] object-cover"/>
+                </div>
+                <h3 className="text-xl font-bold mb-1">Level {level + 1} Clear! — {animalName}</h3>
+                <p className="text-slate-600 mb-4">기록: <span className="font-semibold tabular-nums">{fmtTime(elapsed)}</span></p>
+                <div className="flex items-center gap-2 justify-end">
+                  {level < ANIMALS.length - 1 ? (
+                    <button onClick={() => { setShowWin(false); setLevel(level + 1); setPreviewMode(true); setCornerPreview(false);} } className="px-4 py-2 rounded-xl bg-slate-800 text-white font-semibold">다음 레벨</button>
+                  ) : (
+                    <button onClick={() => { setShowWin(false); setPreviewMode(true); setCornerPreview(false); }} className="px-4 py-2 rounded-xl bg-slate-800 text-white font-semibold">전체 요약 보기</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer className="text-center text-xs text-slate-500 py-10">© 2025 Jason — Sliding Puzzle built with love.</footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
