@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jason's 4x4 Puzzle (2025) — puzzle7</title>
+  <meta name="description" content="Endangered animals sliding puzzle — single HTML, no build">
+  <style>
+    :root{
+      --ink:#0f172a; --muted:#64748b; --card:#ffffff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+         background:linear-gradient(#f1f5f9,#fff); color:var(--ink)}
+    header{position:sticky;top:0;z-index:10;backdrop-filter:saturate(180%) blur(6px);
+           display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #e2e8f0;background:rgba(255,255,255,.7)}
+    h1{margin:0;font-size:clamp(20px,2.5vw,28px);font-weight:800;letter-spacing:-.01em}
+    .badge{font-size:12px;background:#0f172a;color:#fff;border-radius:14px;padding:2px 8px;margin-left:8px}
+    main{max-width:1000px;margin:0 auto;padding:24px 16px 80px}
+    .grid2{display:grid;grid-template-columns:1fr;gap:24px}
+    @media(min-width:900px){.grid2{grid-template-columns:1fr 1fr}}
+    .card{background:var(--card);border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 10px 24px rgba(2,6,23,.05);overflow:hidden}
+    .imgwrap{height:360px}
+    .imgwrap img{width:100%;height:100%;object-fit:cover;display:block}
+    .panel{padding:18px 20px}
+    .lead{color:var(--muted);margin:12px 0 16px}
+    button{appearance:none;border:0;background:#0f172a;color:#fff;border-radius:14px;padding:10px 16px;font-weight:600;cursor:pointer}
+    button:hover{filter:brightness(1.05)} button:active{transform:scale(.98)}
+    .board{width:320px;height:320px;border-radius:22px;border:1px solid #e2e8f0;box-shadow:0 10px 24px rgba(2,6,23,.06);
+           display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);overflow:hidden;background:#fff;user-select:none;touch-action:none}
+    .tile{position:relative;background-repeat:no-repeat;transition:transform .12s ease;cursor:grab}
+    .tile.empty{background:none;box-shadow:inset 0 0 0 2px rgba(15,23,42,.2)}
+    .tile .overlay{position:absolute;inset:0;border:2px solid transparent;border-radius:0;pointer-events:none;mix-blend-mode:multiply;opacity:.45}
+    .tile.movable{cursor:pointer}
+    .corner{position:fixed;right:16px;bottom:16px;z-index:5}
+    .corner .card{width:130px}
+    .records{margin-top:14px}
+    .records li{display:flex;justify-content:space-between;border-bottom:1px solid #eef2f7;padding:6px 0;font-size:14px}
+    .footer{color:#94a3b8;text-align:center;padding:40px 0;font-size:12px}
+    .center{display:flex;flex-direction:column;align-items:center;gap:12px}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:20}
+    .modal.open{display:flex}
+    .modal .dialog{background:#fff;border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 10px 28px rgba(2,6,23,.2);max-width:520px;width:92vw;padding:16px}
+    .dialog img{width:100%;height:280px;object-fit:cover;border-radius:16px}
+    .legend{display:flex;gap:8px;align-items:center;color:#475569;font-size:12px}
+    .sw{width:14px;height:14px;border-radius:3px;border:1px solid rgba(2,6,23,.15)}
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <h1>Jason's 4x4 Puzzle</h1><span class="badge">2025</span>
+    </div>
+    <div class="status" style="font-size:14px">Level <b class="lv">1</b>/10 · <span class="timer">00:00</span></div>
+  </header>
+
+  <main>
+    <div class="grid2">
+      <div class="card imgwrap"><img class="preview" alt="preview"/></div>
+      <div class="panel">
+        <h2 style="margin:0 0 8px;font-size:26px">Level <span class="lv2">1</span>: <span class="animal"></span></h2>
+        <p class="lead">시작을 누르면 그림이 모서리에 미니맵으로 보입니다. 빈 칸은 매판 랜덤이며, 인접 조각을 드래그/탭으로 이동하세요.</p>
+        <button class="start">Start Puzzle</button>
+        <div class="legend" style="margin-top:8px">
+          <span class="sw" style="background:#ffd54f"></span>가능(가로)
+          <span class="sw" style="background:#ff8a65"></span>가능(가로·대체)
+          <span class="sw" style="background:#4fc3f7"></span>가능(세로)
+          <span class="sw" style="background:#81c784"></span>가능(세로·대체)
+        </div>
+        <ul class="records"></ul>
+      </div>
+    </div>
+
+    <div class="center" style="margin-top:22px">
+      <div class="board" aria-label="4x4 sliding puzzle"></div>
+    </div>
+  </main>
+
+  <div class="corner">
+    <div class="card"><img class="mini" alt="mini" style="width:100%;height:100%;object-fit:cover;display:block"></div>
+    <div style="text-align:center;font-size:12px;color:#64748b;margin-top:6px" class="mini-name"></div>
+  </div>
+
+  <div class="modal" id="win">
+    <div class="dialog">
+      <img class="winimg" alt="win image">
+      <h3 style="margin:8px 0 6px;font-size:20px"><span class="win-title"></span></h3>
+      <p style="margin:0 0 12px;color:#475569">기록: <b class="win-time">00:00</b></p>
+      <div style="text-align:right">
+        <button class="next">다음 레벨</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">© 2025 Jason — Sliding Puzzle (Vanilla JS)</div>
+
+<script>
+// ===== Utilities =====
+function fmtTime(ms){ const t=Math.max(0,Math.floor(ms/1000)); const m=Math.floor(t/60); const s=t%60; return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }
+function playVictory(){
+  try{
+    const C=window.AudioContext||window.webkitAudioContext; const ctx=new C();
+    const notes=[[523.25,0,0.18],[659.25,0.2,0.18],[783.99,0.4,0.18],[1046.5,0.6,0.24],[987.77,0.88,0.16],[1046.5,1.06,0.4]];
+    const master=ctx.createGain(); master.gain.value=0.08; master.connect(ctx.destination);
+    notes.forEach(n=>{ const osc=ctx.createOscillator(); const g=ctx.createGain();
+      osc.type='triangle'; osc.frequency.value = n[0]; osc.connect(g); g.connect(master);
+      const st=ctx.currentTime+n[1], en=st+n[2]; g.gain.setValueAtTime(0,st); g.gain.linearRampToValueAtTime(1,st+0.02); g.gain.exponentialRampToValueAtTime(0.0001,en);
+      osc.start(st); osc.stop(en+0.01);
+    });
+    setTimeout(()=>ctx.close(),2200);
+  }catch(e){}
+}
+
+// ===== Watercolor SVGs =====
+const svgWrapper=(inner,bg1='#F5F7FB',bg2='#FFFFFF')=>`<?xml version='1.0' encoding='UTF-8'?>
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'>
+ <defs>
+  <linearGradient id='bg' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='${bg1}'/><stop offset='100%' stop-color='${bg2}'/></linearGradient>
+  <filter id='paper' x='-20%' y='-20%' width='140%' height='140%'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' result='n'/><feColorMatrix type='saturate' values='0.5'/><feBlend in='SourceGraphic' in2='n' mode='multiply'/><feGaussianBlur stdDeviation='0.3'/></filter>
+  <filter id='soft'><feDropShadow dx='0' dy='3' stdDeviation='5' flood-color='#c7cdda' flood-opacity='0.5'/></filter>
+ </defs>
+ <rect x='0' y='0' width='600' height='600' fill='url(#bg)'/>
+ <g filter='url(#paper)'>${inner}</g>
+</svg>`;
+const enc = (svg) => 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)));
+const eyes=(cx1,cx2,cy,cheek,color='#2B2D42')=>`
+ <g><circle cx='${cx1}' cy='${cy}' r='18' fill='${color}'/><circle cx='${cx2}' cy='${cy}' r='18' fill='${color}'/>
+ <circle cx='${cx1-5}' cy='${cy-5}' r='5' fill='#fff' opacity='0.9'/><circle cx='${cx2-5}' cy='${cy-5}' r='5' fill='#fff' opacity='0.9'/>
+ <circle cx='${cx1}' cy='${cheek}' r='10' fill='#FFADB0' opacity='0.7'/><circle cx='${cx2}' cy='${cheek}' r='10' fill='#FFADB0' opacity='0.7'/></g>`;
+
+const animals=[
+  {name:'Amur Leopard', svg:()=>svgWrapper(`<g filter='url(#soft)'><ellipse cx='300' cy='360' rx='220' ry='170' fill='#FFD16A'/><circle cx='200' cy='250' r='55' fill='#FFD16A'/><circle cx='400' cy='250' r='55' fill='#FFD16A'/><ellipse cx='300' cy='310' rx='150' ry='110' fill='#FFC24D'/>${eyes(260,340,300,325)}<ellipse cx='300' cy='340' rx='25' ry='18' fill='#444'/>${Array.from({length:14}).map((_,i)=>{const a=i/14*6.283,r=120,x=300+Math.cos(a)*r,y=320+Math.sin(a)*r;return `<circle cx='${x}' cy='${y}' r='12' fill='#8C5A2F'/>`;}).join('')}</g>`) },
+  {name:'Javan Rhino', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='jr1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#C7D1DA'/><stop offset='100%' stop-color='#9FB0BC'/></linearGradient><ellipse cx='300' cy='360' rx='230' ry='160' fill='url(#jr1)'/><ellipse cx='300' cy='320' rx='160' ry='110' fill='#A0AFBA'/><path d='M340 280 l40 -40 l10 30 z' fill='#EDE7D9'/>${eyes(260,340,310,335)}<ellipse cx='300' cy='355' rx='28' ry='20' fill='#444'/></g>`, '#E6EEF5', '#FFFFFF') },
+  {name:'Vaquita', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='vq1' x1='0' y='0' x2='0' y2='1'><stop offset='0%' stop-color='#BFE7F7'/><stop offset='100%' stop-color='#8AC7E4'/></linearGradient><rect x='80' y='240' width='440' height='200' rx='30' fill='url(#vq1)'/>${eyes(260,340,310,335,'#1f2937')}<ellipse cx='300' cy='355' rx='26' ry='18' fill='#374151'/></g>`, '#E8F7FF', '#FFFFFF') },
+  {name:'Kakapo', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='kp1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#D9F2B8'/><stop offset='100%' stop-color='#BEE691'/></linearGradient><ellipse cx='300' cy='360' rx='210' ry='170' fill='url(#kp1)'/>${eyes(260,340,310,335)} </g>`, '#F3F9EC', '#FFFFFF') },
+  {name:'Sumatran Orangutan', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='ou1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#F4B890'/><stop offset='100%' stop-color='#E59A63'/></linearGradient><ellipse cx='300' cy='360' rx='230' ry='170' fill='url(#ou1)'/>${eyes(260,340,305,330)}<ellipse cx='300' cy='350' rx='28' ry='20' fill='#444'/></g>`, '#FFF5EE', '#FFFFFF') },
+  {name:'Saola', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='sl1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#E2D6C7'/><stop offset='100%' stop-color='#C9B9A6'/></linearGradient><ellipse cx='300' cy='360' rx='220' ry='160' fill='url(#sl1)'/><rect x='280' y='180' width='8' height='100' fill='#3B3B3B'/><rect x='312' y='180' width='8' height='100' fill='#3B3B3B'/>${eyes(260,340,310,335)}<ellipse cx='300' cy='355' rx='26' ry='18' fill='#444'/></g>`, '#F7EFE6', '#FFFFFF') },
+  {name:'Hawksbill Sea Turtle', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='hb1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#B8F0DF'/><stop offset='100%' stop-color='#8DD7C1'/></linearGradient><ellipse cx='300' cy='360' rx='210' ry='160' fill='url(#hb1)'/>${Array.from({length:10}).map((_,i)=>{const x=220+(i%5)*40; const y=290+Math.floor(i/5)*40; return `<rect x='${x}' y='${y}' width='32' height='24' rx='6' fill='#6DB6A1'/>`;}).join('')} ${eyes(260,340,310,335,'#1f2937')}</g>`, '#E9FBF6', '#FFFFFF') },
+  {name:'Mountain Gorilla', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='gl1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#C6CCD6'/><stop offset='100%' stop-color='#9DA5B1'/></linearGradient><ellipse cx='300' cy='360' rx='230' ry='170' fill='url(#gl1)'/>${eyes(260,340,305,330,'#111827')}<ellipse cx='300' cy='350' rx='30' ry='22' fill='#111827'/></g>`, '#F1F3F6', '#FFFFFF') },
+  {name:'Philippine Eagle', svg:()=>svgWrapper(`<g filter='url(#soft)'><linearGradient id='pe1' x1='0' y='0' x2='1' y2='1'><stop offset='0%' stop-color='#F0E9DD'/><stop offset='100%' stop-color='#D9CFBF'/></linearGradient><ellipse cx='300' cy='360' rx='210' ry='160' fill='url(#pe1)'/>${eyes(260,340,300,325,'#1f2937')}<path d='M300 330 l25 30 h-50 z' fill='#F5D78A'/></g>`, '#F7F3EC', '#FFFFFF') },
+  {name:'Sunda Pangolin', svg:()=>svgWrapper(`<g filter='url(#soft)'><radialGradient id='pg1' cx='50%' cy='40%' r='50%'><stop offset='0%' stop-color='#E8C5AF'/><stop offset='100%' stop-color='#C79D87'/></radialGradient><ellipse cx='300' cy='360' rx='220' ry='160' fill='url(#pg1)'/>${Array.from({length:18}).map((_,i)=>{const row=Math.floor(i/6),col=i%6,x=170+col*45,y=260+row*35,c=row%2?'#B88973':'#D7B9A7';return `<path d='M${x} ${y} h40 l-20 24 z' fill='${c}'/>`;}).join('')} ${eyes(260,340,310,335)}<ellipse cx='300' cy='355' rx='26' ry='18' fill='#444'/></g>`, '#F8EFE7', '#FFF7F1') }
+];
+const dataUrls = animals.map(a=>({name:a.name, url:enc(a.svg())}));
+
+// ===== Puzzle state & helpers =====
+const N=4, SIZE=N*N;
+const rcToIdx=(r,c)=>r*N+c;
+const idxToRC=(i)=>({r:Math.floor(i/N), c:i%N});
+function isSolvable(arr, blankIndex){
+  const tiles=arr.filter(x=>x!==-1); let inv=0;
+  for(let i=0;i<tiles.length;i++) for(let j=i+1;j<tiles.length;j++) if(tiles[i]>tiles[j]) inv++;
+  const r=idxToRC(blankIndex).r; const rowFromBottom=N-r; return (inv+rowFromBottom)%2===0;
+}
+function shuffledPositions(blankIndex){
+  const arr=Array.from({length:SIZE},(_,i)=>i); arr[blankIndex]=-1;
+  for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  if(!isSolvable(arr, blankIndex)){ // swap two non-blank
+    const i=arr.findIndex(x=>x!==-1); const j=arr.findIndex((x,k)=>x!==-1 && k!==i); [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+function neighborsOfEmpty(state){
+  const ei=state.indexOf(-1); const {r,c}=idxToRC(ei); const ns=[];
+  if(r>0) ns.push(rcToIdx(r-1,c)); if(r<N-1) ns.push(rcToIdx(r+1,c)); if(c>0) ns.push(rcToIdx(r,c-1)); if(c<N-1) ns.push(rcToIdx(r,c+1));
+  return {emptyIndex:ei, neigh:ns};
+}
+function isComplete(state){ for(let i=0;i<SIZE-1;i++) if(state[i]!==i) return false; return state[SIZE-1]===-1; }
+
+// ===== DOM refs =====
+const els={
+  preview:document.querySelector('.preview'),
+  mini:document.querySelector('.mini'),
+  miniName:document.querySelector('.mini-name'),
+  animal:document.querySelector('.animal'),
+  start:document.querySelector('.start'),
+  records:document.querySelector('.records'),
+  board:document.querySelector('.board'),
+  timer:document.querySelector('.timer'),
+  lv:document.querySelector('.lv'),
+  lv2:document.querySelector('.lv2'),
+  modal:document.getElementById('win'),
+  winTitle:document.querySelector('.win-title'),
+  winTime:document.querySelector('.win-time'),
+  winImg:document.querySelector('.winimg'),
+  nextBtn:document.querySelector('.next')
+};
+
+// ===== App state =====
+let level=0;
+let state=[];
+let running=false;
+let startTime=0;
+let elapsed=0;
+let timerId=null;
+let imgUrl='';
+let animalName='';
+const records=JSON.parse(localStorage.getItem('jasons_puzzle_records_v1')||'[]');
+
+function setTimerActive(on){
+  if(on){ clearInterval(timerId); timerId=setInterval(()=>{ elapsed=Date.now()-startTime; document.querySelector('.timer').textContent=fmtTime(elapsed); },250); }
+  else { clearInterval(timerId); timerId=null; }
+}
+
+function loadLevel(){
+  const a=dataUrls[level]; imgUrl=a.url; animalName=a.name;
+  document.querySelector('.preview').src=imgUrl; document.querySelector('.mini').src=imgUrl; document.querySelector('.mini-name').textContent=animalName; document.querySelector('.animal').textContent=animalName;
+  document.querySelector('.lv').textContent=level+1; document.querySelector('.lv2').textContent=level+1;
+  // list records
+  document.querySelector('.records').innerHTML=animals.map((x,i)=>`<li><span>Lv ${i+1}. ${x.name}</span><span>${records[i]?.ms?fmtTime(records[i].ms):'—'}</span></li>`).join('');
+  // reset
+  document.querySelector('.board').innerHTML='';
+  running=false; elapsed=0; document.querySelector('.timer').textContent='00:00';
+}
+function startLevel(){
+  const blank=Math.floor(Math.random()*SIZE);
+  state=shuffledPositions(blank);
+  renderBoard();
+  startTime=Date.now(); elapsed=0; running=true; setTimerActive(true);
+}
+function onWin(){
+  running=false; setTimerActive(false);
+  const time=Date.now()-startTime; document.querySelector('.win-time').textContent=fmtTime(time);
+  document.querySelector('.win-title').textContent=`Level ${level+1} Clear — ${animalName}`; document.querySelector('.winimg').src=imgUrl;
+  records[level]={level:level+1,name:animalName,ms:time,ts:Date.now()};
+  localStorage.setItem('jasons_puzzle_records_v1', JSON.stringify(records));
+  document.getElementById('win').classList.add('open'); playVictory();
+}
+function nextLevel(){
+  document.getElementById('win').classList.remove('open');
+  if(level<dataUrls.length-1){ level++; loadLevel(); }
+}
+
+function renderBoard(){
+  const size=320, step=size/4;
+  const neigh=neighborsOfEmpty(state).neigh;
+  const paletteH=['#ffd54f','#ff8a65']; // horizontal colors (left/right)
+  const paletteV=['#4fc3f7','#81c784']; // vertical colors (up/down)
+  const board=document.querySelector('.board');
+  board.innerHTML='';
+  const info=neighborsOfEmpty(state);
+  for(let i=0;i<SIZE;i++){
+    const tileIdx=state[i];
+    const div=document.createElement('div');
+    div.className='tile'+(tileIdx===-1?' empty':'');
+    div.style.width=step+'px'; div.style.height=step+'px';
+    if(tileIdx!==-1){
+      const row=Math.floor(tileIdx/4), col=tileIdx%4;
+      const bgX=(col/3)*100, bgY=(row/3)*100;
+      div.style.backgroundImage=`url(${imgUrl})`;
+      div.style.backgroundSize='400% 400%';
+      div.style.backgroundPosition=`${bgX}% ${bgY}%`;
+    }
+    // movable highlighting
+    const isMovable = neigh.indexOf(i)!==-1;
+    if(isMovable){
+      div.classList.add('movable');
+      const {emptyIndex}=info;
+      const er=emptyIndex>>2, ec=emptyIndex&3, tr=i>>2, tc=i&3;
+      const horizontal = er===tr;
+      const color = horizontal ? paletteH[(i+er+ec)%paletteH.length] : paletteV[(i+tr+tc)%paletteV.length];
+      const ov=document.createElement('div');
+      ov.className='overlay';
+      ov.style.background=color;
+      ov.style.borderColor=color;
+      div.appendChild(ov);
+    }
+
+    // click/tap move
+    div.addEventListener('click',()=>tryMove(i));
+    // drag
+    let drag=null;
+    div.addEventListener('pointerdown',e=>{
+      if(!isMovable) return;
+      if(div.setPointerCapture) div.setPointerCapture(e.pointerId);
+      const {emptyIndex}=neighborsOfEmpty(state);
+      const er=emptyIndex>>2, ec=emptyIndex&3, tr=i>>2, tc=i&3;
+      let dir=null; if(er===tr) dir = ec>tc?'right':'left'; else if(ec===tc) dir = er>tr?'down':'up';
+      drag={sx:e.clientX, sy:e.clientY, dir, moved:false};
+    });
+    div.addEventListener('pointermove',e=>{
+      if(!drag) return;
+      const dx=e.clientX-drag.sx, dy=e.clientY-drag.sy;
+      let tx=0,ty=0;
+      if(drag.dir==='left'||drag.dir==='right') tx=Math.max(Math.min(dx, step), -step);
+      else if(drag.dir==='up'||drag.dir==='down') ty=Math.max(Math.min(dy, step), -step);
+      div.style.transform=`translate(${tx}px,${ty}px)`; drag.moved=Math.abs(tx)+Math.abs(ty)>4;
+    });
+    function endDrag(){
+      if(!drag) return; const trn=div.style.transform;
+      let movedEnough=false;
+      if(trn && trn.indexOf('translate(')===0){
+        const parts=trn.replace('translate(','').replace(')','').split(',');
+        const tx=parseFloat(parts[0]), ty=parseFloat(parts[1]);
+        if(drag.dir==='left'||drag.dir==='right') movedEnough=Math.abs(tx)>step/2;
+        if(drag.dir==='up'||drag.dir==='down') movedEnough=Math.abs(ty)>step/2;
+      }
+      div.style.transform='translate(0px,0px)';
+      if(movedEnough) tryMove(i);
+      drag=null;
+    }
+    div.addEventListener('pointerup',endDrag);
+    div.addEventListener('pointercancel',endDrag);
+    board.appendChild(div);
+  }
+}
+
+function tryMove(i){
+  if(!running) return;
+  const {emptyIndex, neigh}=neighborsOfEmpty(state);
+  if(neigh.indexOf(i)===-1) return;
+  const next=state.slice(); const t=next[emptyIndex]; next[emptyIndex]=next[i]; next[i]=t;
+  state=next; renderBoard();
+  if(isComplete(state)) onWin();
+}
+
+// Events
+document.querySelector('.start').addEventListener('click', startLevel);
+document.querySelector('.next').addEventListener('click', nextLevel);
+document.getElementById('win').addEventListener('click', (e)=>{ if(e.target.id==='win') e.currentTarget.classList.remove('open'); });
+
+// Init
+(function init(){
+  const a=dataUrls[0];
+  document.querySelector('.preview').src=a.url; document.querySelector('.mini').src=a.url;
+  document.querySelector('.mini-name').textContent=a.name; document.querySelector('.animal').textContent=a.name;
+  document.querySelector('.lv').textContent=1; document.querySelector('.lv2').textContent=1;
+  const recs=JSON.parse(localStorage.getItem('jasons_puzzle_records_v1')||'[]');
+  document.querySelector('.records').innerHTML=animals.map((x,i)=>`<li><span>Lv ${i+1}. ${x.name}</span><span>${recs[i]?.ms?fmtTime(recs[i].ms):'—'}</span></li>`).join('');
+})();
+</script>
+</body>
+</html>
