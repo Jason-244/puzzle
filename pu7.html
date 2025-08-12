@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>3×3 동물 퍼즐 (드래그, 타이머 기록)</title>
+<style>
+  html,body{height:100%}
+  body{overflow:hidden;touch-action:none}
+
+  body{overflow:hidden;}
+
+  :root{
+    --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0b1220,#121a2c);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,sans-serif}
+  .wrap{max-width:920px;margin:18px auto;padding:0 14px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .title{font-weight:800;font-size:20px;letter-spacing:.3px}
+  .stat{display:flex;gap:10px;align-items:center}
+  .pill{background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:6px 10px;color:#e5e7eb}
+  .btn{background:#172036;border:1px solid #27364d;color:#e5e7eb;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .btn:hover{filter:brightness(1.15)}
+  .grid{width:420px;height:420px;margin:12px auto;background:#0b1220;border:1px solid #1f2937;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);overflow:hidden;touch-action:none}
+  .tile{position:relative;user-select:none}
+  .piece{position:absolute;inset:0;background-size:300% 300%;border:1px solid rgba(255,255,255,.06);cursor:grab;transition:transform .12s ease;will-change:transform}
+  .piece:active{cursor:grabbing}
+  .blank{background:repeating-linear-gradient(45deg,#facc15,#facc15 12px,#f59e0b 12px,#f59e0b 24px)}
+  .footer{max-width:420px;margin:8px auto 24px;color:var(--muted);font-size:12px;text-align:center}
+  .credits{opacity:.8}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;border:1px solid #1f2937;color:#e5e7eb;padding:10px 14px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);display:none}
+  .ok{color:#16a34a}
+
+#preview {}
+
+</style>
+</head>
+<body>
+<div class="wrap" style="position:relative;">
+  <header style="display:flex;align-items:center;gap:10px;">
+    <img id="preview" alt="원본 미리보기" style="width:48px;height:48px;object-fit:cover;border:2px solid #fff;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"/>
+    <div class="title">3×3 동물 퍼즐</div>
+    <div class="stat">
+      <span class="pill">⏱ <b id="time">00:00</b></span>
+      <span class="pill">🏆 <b id="best">--:--</b></span>
+      <button class="btn" id="btnNew">새 이미지</button>
+      <button class="btn" id="btnShuffle">다시 섞기</button>
+    </div>
+  </header>
+
+  <div style="position:relative;display:inline-block;">
+  <div id="boardWrap" style="position:relative;display:inline-block;">
+  <div id="board" class="grid" aria-label="퍼즐 보드"></div>
+  <img id="reveal" alt="정답 전체 이미지"        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:16px;opacity:0;pointer-events:none;transition:opacity .35s ease"/>
+</div>
+</div>
+
+  <p class="footer">
+    <span id="label"></span>
+    <br><span class="credits">이미지는 위키미디어 공용의 공개 사진에서 무작위로 선택됩니다.</span>
+  </p>
+</div>
+<div id="toast" class="toast">기록 저장됨!</div>
+
+<script>
+(function(){
+  document.addEventListener('touchmove', function(e){ e.preventDefault(); }, {passive:false});
+
+  const N=3, SIZE=N*N;
+  const board = document.getElementById('board');
+  const timeEl = document.getElementById('time');
+  const bestEl = document.getElementById('best');
+  const labelEl = document.getElementById('label');
+  const btnNew = document.getElementById('btnNew');
+  const btnShuffle = document.getElementById('btnShuffle');
+  const toast = document.getElementById('toast');
+  const BEST_KEY='animal_puzzle_best_v1';
+
+  const animals = [
+    {name:'Lion', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Tiger', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Tiger.50.jpg/1024px-Tiger.50.jpg'},
+    {name:'Jaguar', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Standing_jaguar.jpg/1024px-Standing_jaguar.jpg'},
+    {name:'Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/African_Leopard.jpg/1024px-African_Leopard.jpg'},
+    {name:'Cheetah', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Cheetah_Kruger.jpg/1024px-Cheetah_Kruger.jpg'},
+    {name:'Snow Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Uncia_uncia.jpg/1024px-Uncia_uncia.jpg'},
+    {name:'Lynx', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Lynx_lynx_poing.jpg/1024px-Lynx_lynx_poing.jpg'},
+    {name:'Puma', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cougar_4.jpg/1024px-Cougar_4.jpg'},
+    {name:'Caracal', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Caracal_Caracal.jpg/1024px-Caracal_Caracal.jpg'},
+    {name:'Serval', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Leptailurus_serval_-_Serengeti_National_Park%2C_Tanzania.jpg/1024px-Leptailurus_serval_-_Serengeti_National_Park%2C_Tanzania.jpg'},
+    {name:'Wolf', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Canis_lupus_laying.jpg/1024px-Canis_lupus_laying.jpg'},
+    {name:'Coyote', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/2009-Coyote-Yosemite.jpg/1024px-2009-Coyote-Yosemite.jpg'},
+    {name:'Red Fox', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/2012-british-red-fox.jpg/1024px-2012-british-red-fox.jpg'},
+    {name:'Fennec Fox', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Fennec_Fox_Vulpes_zerda.jpg/1024px-Fennec_Fox_Vulpes_zerda.jpg'},
+    {name:'Brown Bear', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Ursus_arctos_-_Norway.jpg/1024px-Ursus_arctos_-_Norway.jpg'},
+    {name:'Polar Bear', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Polar_Bear_-_Alaska_%28cropped%29.jpg/1024px-Polar_Bear_-_Alaska_%28cropped%29.jpg'},
+    {name:'Giant Panda', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Grosser_Panda.JPG/1024px-Grosser_Panda.JPG'},
+    {name:'Koala', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Koala_climbing_tree.jpg/1024px-Koala_climbing_tree.jpg'},
+    {name:'African Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/African_Bush_Elephant.jpg/1024px-African_Bush_Elephant.jpg'},
+    {name:'Asian Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Asian_elephant_at_Kabini.jpg/1024px-Asian_elephant_at_Kabini.jpg'},
+    {name:'Giraffe', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Giraffa_camelopardalis_reticulata.jpg/1024px-Giraffa_camelopardalis_reticulata.jpg'},
+    {name:'Zebra', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Plains_Zebra_Equus_quagga.jpg/1024px-Plains_Zebra_Equus_quagga.jpg'},
+    {name:'Hippopotamus', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Hippopotame_-_Hippo_-_Zoo_de_Cerza_%282%29.jpg/1024px-Hippopotame_-_Hippo_-_Zoo_de_Cerza_%282%29.jpg'},
+    {name:'Rhinoceros', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/White_Rhinoceros.jpg/1024px-White_Rhinoceros.jpg'},
+    {name:'Camel', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Camel_BW_2013-07-20_10-36-16.jpg/1024px-Camel_BW_2013-07-20_10-36-16.jpg'},
+    {name:'Bison', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/American_bison_k5680-1.jpg/1024px-American_bison_k5680-1.jpg'},
+    {name:'Moose', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Moose_superior.jpg/1024px-Moose_superior.jpg'},
+    {name:'Reindeer', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/Renne_2.jpg/1024px-Renne_2.jpg'},
+    {name:'Gorilla', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Gorilla_gorilla_gorilla4.jpg/1024px-Gorilla_gorilla_gorilla4.jpg'},
+    {name:'Chimpanzee', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Schimpanse_Zoo_Leipzig.jpg/1024px-Schimpanse_Zoo_Leipzig.jpg'},
+    {name:'Orangutan', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG/1024px-Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG'},
+    {name:'Baboon', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Baboon_at_Albert_National_Park.jpg/1024px-Baboon_at_Albert_National_Park.jpg'},
+    {name:'Mandrill', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Mandrill_at_Aalborg_Zoo.jpg/1024px-Mandrill_at_Aalborg_Zoo.jpg'},
+    {name:'Lion 33', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 34', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 35', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 36', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 37', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 38', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 39', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 40', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 41', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 42', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 43', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 44', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 45', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 46', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 47', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 48', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 49', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 50', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 51', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 52', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 53', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 54', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 55', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 56', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 57', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 58', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 59', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 60', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 61', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 62', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 63', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 64', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 65', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 66', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 67', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 68', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 69', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 70', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 71', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 72', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 73', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 74', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 75', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 76', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 77', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 78', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 79', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 80', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 81', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 82', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 83', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 84', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 85', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 86', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 87', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 88', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 89', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 90', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 91', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 92', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 93', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 94', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 95', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 96', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 97', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 98', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 99', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 100', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 101', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 102', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 103', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 104', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 105', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 106', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 107', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 108', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 109', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'}
+  ];
+  const animals = [
+    {name:'Lion', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Tiger', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Tiger.50.jpg/1024px-Tiger.50.jpg'},
+    {name:'Jaguar', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Standing_jaguar.jpg/1024px-Standing_jaguar.jpg'},
+    {name:'Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/African_Leopard.jpg/1024px-African_Leopard.jpg'},
+    {name:'Cheetah', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Cheetah_Kruger.jpg/1024px-Cheetah_Kruger.jpg'},
+    {name:'Snow Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Uncia_uncia.jpg/1024px-Uncia_uncia.jpg'},
+    {name:'Lynx', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Lynx_lynx_poing.jpg/1024px-Lynx_lynx_poing.jpg'},
+    {name:'Puma', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cougar_4.jpg/1024px-Cougar_4.jpg'},
+    {name:'Caracal', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Caracal_Caracal.jpg/1024px-Caracal_Caracal.jpg'},
+    {name:'Serval', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Leptailurus_serval_-_Serengeti_National_Park%2C_Tanzania.jpg/1024px-Leptailurus_serval_-_Serengeti_National_Park%2C_Tanzania.jpg'},
+    {name:'Wolf', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Canis_lupus_laying.jpg/1024px-Canis_lupus_laying.jpg'},
+    {name:'Coyote', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/2009-Coyote-Yosemite.jpg/1024px-2009-Coyote-Yosemite.jpg'},
+    {name:'Red Fox', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/2012-british-red-fox.jpg/1024px-2012-british-red-fox.jpg'},
+    {name:'Fennec Fox', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Fennec_Fox_Vulpes_zerda.jpg/1024px-Fennec_Fox_Vulpes_zerda.jpg'},
+    {name:'Brown Bear', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/Ursus_arctos_-_Norway.jpg/1024px-Ursus_arctos_-_Norway.jpg'},
+    {name:'Polar Bear', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Polar_Bear_-_Alaska_%28cropped%29.jpg/1024px-Polar_Bear_-_Alaska_%28cropped%29.jpg'},
+    {name:'Giant Panda', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Grosser_Panda.JPG/1024px-Grosser_Panda.JPG'},
+    {name:'Koala', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Koala_climbing_tree.jpg/1024px-Koala_climbing_tree.jpg'},
+    {name:'African Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/African_Bush_Elephant.jpg/1024px-African_Bush_Elephant.jpg'},
+    {name:'Asian Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Asian_elephant_at_Kabini.jpg/1024px-Asian_elephant_at_Kabini.jpg'},
+    {name:'Giraffe', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Giraffa_camelopardalis_reticulata.jpg/1024px-Giraffa_camelopardalis_reticulata.jpg'},
+    {name:'Zebra', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Plains_Zebra_Equus_quagga.jpg/1024px-Plains_Zebra_Equus_quagga.jpg'},
+    {name:'Hippopotamus', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Hippopotame_-_Hippo_-_Zoo_de_Cerza_%282%29.jpg/1024px-Hippopotame_-_Hippo_-_Zoo_de_Cerza_%282%29.jpg'},
+    {name:'Rhinoceros', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/White_Rhinoceros.jpg/1024px-White_Rhinoceros.jpg'},
+    {name:'Camel', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Camel_BW_2013-07-20_10-36-16.jpg/1024px-Camel_BW_2013-07-20_10-36-16.jpg'},
+    {name:'Bison', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/American_bison_k5680-1.jpg/1024px-American_bison_k5680-1.jpg'},
+    {name:'Moose', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Moose_superior.jpg/1024px-Moose_superior.jpg'},
+    {name:'Reindeer', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/Renne_2.jpg/1024px-Renne_2.jpg'},
+    {name:'Gorilla', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Gorilla_gorilla_gorilla4.jpg/1024px-Gorilla_gorilla_gorilla4.jpg'},
+    {name:'Chimpanzee', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Schimpanse_Zoo_Leipzig.jpg/1024px-Schimpanse_Zoo_Leipzig.jpg'},
+    {name:'Orangutan', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG/1024px-Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG'},
+    {name:'Baboon', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Baboon_at_Albert_National_Park.jpg/1024px-Baboon_at_Albert_National_Park.jpg'},
+    {name:'Mandrill', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Mandrill_at_Aalborg_Zoo.jpg/1024px-Mandrill_at_Aalborg_Zoo.jpg'},
+    {name:'Lion 33', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 34', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 35', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 36', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 37', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 38', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 39', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 40', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 41', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 42', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 43', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 44', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 45', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 46', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 47', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 48', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 49', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 50', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 51', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 52', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 53', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 54', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 55', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 56', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 57', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 58', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 59', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 60', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 61', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 62', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 63', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 64', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 65', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 66', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 67', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 68', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 69', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 70', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 71', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 72', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 73', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 74', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 75', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 76', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 77', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 78', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 79', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 80', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 81', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 82', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 83', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 84', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 85', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 86', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 87', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 88', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 89', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 90', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 91', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 92', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 93', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 94', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 95', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 96', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 97', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 98', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 99', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 100', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 101', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 102', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 103', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 104', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 105', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 106', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 107', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 108', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Lion 109', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/1024px-Lion_waiting_in_Namibia.jpg'}
+  ];
+  animals.push(
+    {name:'Amur Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Amur_Leopard_4.jpg/800px-Amur_Leopard_4.jpg'},
+    {name:'Koala', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Koala_climbing_tree.jpg/800px-Koala_climbing_tree.jpg'},
+    {name:'African Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/African_Bush_Elephant.jpg/800px-African_Bush_Elephant.jpg'},
+    {name:'Tiger', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Tiger.50.jpg/800px-Tiger.50.jpg'}
+  );
+
+  let imgURL='', imgName='';
+  let state = []; // positions -> value at index = original tile index, -1 for blank
+  let startTime = 0, timerId=null;
+  let dragging = null; // {i, el, startX, startY, dir}
+
+  function playWin(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    const freqs = [523.25,659.25,783.99]; // C5 E5 G5
+    freqs.forEach((f,i)=>{
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type='sine'; o.frequency.value=f;
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.3, now+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.35);
+      o.start(now+0.02*i);
+      o.stop(now+0.4+0.02*i);
+    });
+  }catch(e){}
+}
+function fmt(ms){
+    const s = Math.floor(ms/1000);
+    const m = Math.floor(s/60);
+    const ss = s%60;
+    return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }
+  function setTime(ms){ timeEl.textContent = fmt(ms); }
+  function setBest(ms){ bestEl.textContent = ms>0 ? fmt(ms) : '--:--'; }
+  setBest(parseInt(localStorage.getItem(BEST_KEY)||'0',10));
+
+  function pickAnimal(){
+    const a = animals[Math.floor(Math.random()*animals.length)];
+    imgURL = a.url; imgName = a.name;
+    labelEl.textContent = '사진: '+imgName;
+    document.getElementById('preview').src = imgURL;
+}
+
+  function idxToRC(i){ return {r:Math.floor(i/N), c:i%N}; }
+  function rcToIdx(r,c){ return r*N+c; }
+
+  function isSolvable(arr, blankIndex){
+    const tiles = arr.filter(x=>x!==-1);
+    let inv=0;
+    for(let i=0;i<tiles.length;i++)for(let j=i+1;j<tiles.length;j++) if(tiles[i]>tiles[j]) inv++;
+    if(N%2===1) return inv%2===0;
+    const {r} = idxToRC(blankIndex);
+    const rowFromBottom = N - r;
+    return (rowFromBottom%2===0)? inv%2===1 : inv%2===0;
+  }
+
+  function shuffled(blankIndex){
+    let arr = Array.from({length:SIZE}, (_,i)=>i);
+    arr[blankIndex] = -1;
+    for(let i=arr.length-1;i>0;i--){
+      const j=(Math.random()*(i+1))|0; [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    if(!isSolvable(arr, blankIndex)){
+      const i = arr.findIndex(x=>x!==-1);
+      const j = arr.findIndex((x,k)=>x!==-1 && k!==i);
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  function allPlacedExceptBlank(arr){
+    for(let i=0;i<SIZE;i++){
+      if(arr[i]!==-1 && arr[i]!==i) return false;
+    }
+    return true;
+  }
+
+  function buildBoard(){
+    board.innerHTML='';
+    for(let i=0;i<SIZE;i++){
+      const cell = document.createElement('div');
+      cell.className='tile';
+      const piece = document.createElement('div');
+      piece.className='piece';
+      piece.dataset.index=i;
+      cell.appendChild(piece);
+      board.appendChild(cell);
+    }
+  }
+
+  function applyBackgrounds(){
+    const pieces = board.querySelectorAll('.piece');
+    pieces.forEach((el,i)=>{
+      const val = state[i];
+      if(val===-1){
+        el.classList.add('blank');
+        el.style.backgroundImage='none';
+      }else{
+        el.classList.remove('blank');
+        const r=Math.floor(val/N), c=val%N;
+        const posX = (c/(N-1))*100, posY=(r/(N-1))*100;
+        el.style.backgroundImage=`url("${imgURL}")`;
+        el.style.backgroundPosition = posX+'% '+posY+'%';
+        el.style.backgroundSize = (N*100)+'% '+(N*100)+'%';
+      }
+      el.style.transform='translate(0,0)';
+    });
+  }
+
+  function neighborsOfEmpty(arr){
+    const ei = arr.indexOf(-1);
+    const {r,c}=idxToRC(ei);
+    const list=[];
+    if(r>0) list.push(rcToIdx(r-1,c));
+    if(r<N-1) list.push(rcToIdx(r+1,c));
+    if(c>0) list.push(rcToIdx(r,c-1));
+    if(c<N-1) list.push(rcToIdx(r,c+1));
+    return {emptyIndex:ei, neighbors:list};
+  }
+
+  function onPointerDown(e){
+    const el = e.currentTarget;
+    const i = parseInt(el.dataset.index,10);
+    const {emptyIndex, neighbors} = neighborsOfEmpty(state);
+    if(!neighbors.includes(i)) return;
+    const {r:er,c:ec}=idxToRC(emptyIndex);
+    const {r:tr,c:tc}=idxToRC(i);
+    let dir=null;
+    if(er===tr) dir = ec>tc ? 'right':'left';
+    else if(ec===tc) dir = er>tr ? 'down':'up';
+    if(!dir) return;
+    el.setPointerCapture && el.setPointerCapture(e.pointerId);
+    dragging = {i, el, dir, startX:e.clientX, startY:e.clientY};
+  }
+
+  function onPointerMove(e){
+    if(!dragging) return;
+    const dx = e.clientX - dragging.startX;
+    const dy = e.clientY - dragging.startY;
+    const step = board.clientWidth / N;
+    let tx=0, ty=0;
+    if(dragging.dir==='left' || dragging.dir==='right'){
+      tx = Math.max(Math.min(dx, step), -step);
+    }else{
+      ty = Math.max(Math.min(dy, step), -step);
+    }
+    dragging.el.style.transform = `translate(${tx}px,${ty}px)`;
+  }
+
+  function onPointerUp(e){
+    if(!dragging) return;
+    const el = dragging.el;
+    const m = el.style.transform;
+    const step = board.clientWidth / N;
+    let moved=false;
+    if(m && m.startsWith('translate(')){
+      const v=m.replace('translate(','').replace(')','').split(',');
+      const tx=parseFloat(v[0]); const ty=parseFloat(v[1]);
+      moved = (Math.abs(tx)>step/2)||(Math.abs(ty)>step/2);
+    }
+    el.style.transform='translate(0,0)';
+    if(moved) swapWithEmpty(dragging.i);
+    dragging=null;
+  }
+
+  function swapWithEmpty(i){
+    const {emptyIndex} = neighborsOfEmpty(state);
+    const next=[...state];
+    [next[emptyIndex], next[i]] = [next[i], next[emptyIndex]];
+    state = next;
+    applyBackgrounds();
+    if(allPlacedExceptBlank(state)){
+      // reveal full image and sound
+      try{ document.getElementById('reveal').src = imgURL; document.getElementById('reveal').style.opacity = '1'; }catch(e){}
+      playWin();
+      stopTimer();
+      saveBest();
+      // fill tiles with full image too
+      try{
+        state = Array.from({length:9}, (_,i)=>i);
+        applyBackgrounds();
+      }catch(e){}
+
+      showToast('완료! 기록 저장됨');
+    }
+  }
+
+  function startTimer(){
+    startTime = Date.now();
+    if(timerId) cancelAnimationFrame(timerId);
+    const tick = ()=>{
+      const ms = Date.now()-startTime;
+      setTime(ms);
+      timerId = requestAnimationFrame(tick);
+    };
+    timerId = requestAnimationFrame(tick);
+  }
+  function stopTimer(){
+    if(timerId){ cancelAnimationFrame(timerId); timerId=null; }
+  }
+  function saveBest(){
+    const ms = Date.now()-startTime;
+    const best = parseInt(localStorage.getItem(BEST_KEY)||'0',10);
+    if(!best || ms<best){
+      localStorage.setItem(BEST_KEY, String(ms));
+      setBest(ms);
+    }
+  }
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.style.display='block';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=> toast.style.display='none', 1400);
+  }
+
+  function shuffleAndStart(){
+    try{ document.getElementById('reveal').style.opacity='0'; }catch(e){}
+    const blank = (Math.random()*SIZE)|0;
+    state = shuffled(blank);
+    applyBackgrounds();
+    stopTimer();
+    setTime(0);
+    startTimer();
+  }
+
+  
+function loadImageAndStart(){
+  // choose one random animal and try to load with timeout + retries
+  const preview = document.getElementById('preview');
+  let attempts = 0;
+  const MAX_ATTEMPTS = 8;
+
+  function attempt(){
+    attempts++;
+    const a = animals[(Math.random()*animals.length)|0];
+    imgURL = a.url + (a.url.includes('?')?'&':'?') + 't=' + Date.now();
+    imgName = a.name;
+    labelEl.textContent = '사진: ' + imgName;
+    if(preview) preview.src = imgURL;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    let done=false;
+    const to = setTimeout(()=>{
+      if(done) return;
+      done=true; img.onerror && img.onerror();
+    }, 6000); // 6s timeout
+
+    img.onload = ()=>{
+      if(done) return;
+      clearTimeout(to); done=true;
+      buildBoard();
+      attachEvents();
+      // set reveal src for clarity
+      try{ document.getElementById('reveal').src = imgURL; }catch(e){}
+      shuffleAndStart();
+    };
+    img.onerror = ()=>{
+      if(done) return;
+      clearTimeout(to); done=true;
+      if(attempts < MAX_ATTEMPTS) return attempt();
+      // final fallback: placeholder
+      imgURL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/640px-No-Image-Placeholder.svg.png';
+      imgName = '(placeholder)';
+      labelEl.textContent = '사진: ' + imgName;
+      if(preview) preview.src = imgURL;
+      buildBoard(); attachEvents(); shuffleAndStart();
+    };
+    img.src = imgURL;
+  }
+  attempt();
+}
+      imgURL='https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/640px-No-Image-Placeholder.svg.png'; imgName='(placeholder)';
+      // fallback: try again with a different animal
+      console.warn('이미지 로드 실패, 다른 동물로 재시도');
+      setTimeout(loadImageAndStart, 100);
+    };
+    img.src = imgURL + (imgURL.includes('?')?'&':'?') + 'cacheBust=' + Date.now();
+  }
+
+  function attachEvents(){
+    const pieces = board.querySelectorAll('.piece');
+    pieces.forEach(el=>{
+      el.onpointerdown = onPointerDown;
+    });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  }
+
+  btnShuffle.onclick = ()=> shuffleAndStart();
+  btnNew.onclick = ()=>{
+    try{ document.getElementById('reveal').style.opacity='0'; }catch(e){}
+    stopTimer();
+    setTime(0);
+    board.innerHTML='';
+    loadImageAndStart();
+  };
+
+  // init
+  setTime(0);
+  loadImageAndStart();
+})();
+</script>
+</body>
+</html>
