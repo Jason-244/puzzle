@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>3×3 동물 퍼즐 (드래그, 타이머 기록)</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0b1220,#121a2c);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,sans-serif}
+  .wrap{max-width:920px;margin:18px auto;padding:0 14px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .title{font-weight:800;font-size:20px;letter-spacing:.3px}
+  .stat{display:flex;gap:10px;align-items:center}
+  .pill{background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:6px 10px;color:#e5e7eb}
+  .btn{background:#172036;border:1px solid #27364d;color:#e5e7eb;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .btn:hover{filter:brightness(1.15)}
+  .grid{width:420px;height:420px;margin:12px auto;background:#0b1220;border:1px solid #1f2937;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);overflow:hidden;touch-action:none}
+  .tile{position:relative;user-select:none}
+  .piece{position:absolute;inset:0;background-size:300% 300%;border:1px solid rgba(255,255,255,.06);cursor:grab;transition:transform .12s ease;will-change:transform}
+  .piece:active{cursor:grabbing}
+  .blank{background:repeating-linear-gradient(45deg,#facc15,#facc15 12px,#f59e0b 12px,#f59e0b 24px)}
+  .footer{max-width:420px;margin:8px auto 24px;color:var(--muted);font-size:12px;text-align:center}
+  .credits{opacity:.8}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;border:1px solid #1f2937;color:#e5e7eb;padding:10px 14px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);display:none}
+  .ok{color:#16a34a}
+
+#preview {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  background: #000;
+  z-index: 1000;
+}
+
+</style>
+</head>
+<body>
+<div class="wrap" style="position:relative;">
+  <header>
+    <div class="title">3×3 동물 퍼즐</div>
+    <div class="stat">
+      <span class="pill">⏱ <b id="time">00:00</b></span>
+      <span class="pill">🏆 <b id="best">--:--</b></span>
+      <button class="btn" id="btnNew">새 이미지</button>
+      <button class="btn" id="btnShuffle">다시 섞기</button>
+    </div>
+  </header>
+
+  <div style="position:relative;display:inline-block;">
+  <div id="board" class="grid" aria-label="퍼즐 보드"></div>
+</div>
+<img id="preview" alt="원본 미리보기">
+  <p class="footer">
+    <span id="label"></span>
+    <br><span class="credits">이미지는 위키미디어 공용의 공개 사진에서 무작위로 선택됩니다.</span>
+  </p>
+</div>
+<div id="toast" class="toast">기록 저장됨!</div>
+
+<script>
+(function(){
+  const N=3, SIZE=N*N;
+  const board = document.getElementById('board');
+  const timeEl = document.getElementById('time');
+  const bestEl = document.getElementById('best');
+  const labelEl = document.getElementById('label');
+  const btnNew = document.getElementById('btnNew');
+  const btnShuffle = document.getElementById('btnShuffle');
+  const toast = document.getElementById('toast');
+  const BEST_KEY='animal_puzzle_best_v1';
+
+  const animals = [
+    {name:'Amur Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Amur_Leopard_4.jpg/800px-Amur_Leopard_4.jpg'},
+    {name:'Javan Rhino',  url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Rhinoceros_sondaicus_in_Ujung_Kulon.jpg/800px-Rhinoceros_sondaicus_in_Ujung_Kulon.jpg'},
+    {name:'Hawksbill Turtle', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Hawksbill_turtle.jpg/800px-Hawksbill_turtle.jpg'},
+    {name:'Mountain Gorilla', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Mountain_gorilla_%28Gorilla_beringei_beringei%29.jpg/800px-Mountain_gorilla_%28Gorilla_beringei_beringei%29.jpg'},
+    {name:'Philippine Eagle', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Philippine_Eagle_on_a_tree.jpg/800px-Philippine_Eagle_on_a_tree.jpg'},
+    {name:'Cheetah', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Cheetah_Kruger.jpg/800px-Cheetah_Kruger.jpg'},
+    {name:'Snow Leopard', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Uncia_uncia.jpg/800px-Uncia_uncia.jpg'},
+    {name:'Red Panda', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Ailurus_fulgens_RoterPanda_LesserPanda.jpg/800px-Ailurus_fulgens_RoterPanda_LesserPanda.jpg'},
+    {name:'Giant Panda', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Grosser_Panda.JPG/800px-Grosser_Panda.JPG'},
+    {name:'African Elephant', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/African_Bush_Elephant.jpg/800px-African_Bush_Elephant.jpg'},
+    {name:'Tiger', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Tiger.50.jpg/800px-Tiger.50.jpg'},
+    {name:'Lion', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/800px-Lion_waiting_in_Namibia.jpg'},
+    {name:'Polar Bear', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Polar_Bear_-_Alaska_%28cropped%29.jpg/800px-Polar_Bear_-_Alaska_%28cropped%29.jpg'},
+    {name:'Koala', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Koala_climbing_tree.jpg/800px-Koala_climbing_tree.jpg'},
+    {name:'Kangaroo', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Kangaroo_Australia_01.jpg/800px-Kangaroo_Australia_01.jpg'},
+    {name:'Chimpanzee', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Chimpanzee-Head.jpg/800px-Chimpanzee-Head.jpg'},
+    {name:'Orangutan', url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG/800px-Orang_Utan%2C_Semenggok_Forest_Reserve%2C_Sarawak%2C_Borneo%2C_Malaysia.JPG'}
+  ];
+
+  let imgURL='', imgName='';
+  let state = []; // positions -> value at index = original tile index, -1 for blank
+  let startTime = 0, timerId=null;
+  let dragging = null; // {i, el, startX, startY, dir}
+
+  function fmt(ms){
+    const s = Math.floor(ms/1000);
+    const m = Math.floor(s/60);
+    const ss = s%60;
+    return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+  }
+  function setTime(ms){ timeEl.textContent = fmt(ms); }
+  function setBest(ms){ bestEl.textContent = ms>0 ? fmt(ms) : '--:--'; }
+  setBest(parseInt(localStorage.getItem(BEST_KEY)||'0',10));
+
+  function pickAnimal(){
+    const a = animals[(Math.random()*animals.length)|0];
+    imgURL = a.url; imgName = a.name;
+    labelEl.textContent = '사진: '+imgName;
+    document.getElementById('preview').src = imgURL;
+  }
+
+  function idxToRC(i){ return {r:Math.floor(i/N), c:i%N}; }
+  function rcToIdx(r,c){ return r*N+c; }
+
+  function isSolvable(arr, blankIndex){
+    const tiles = arr.filter(x=>x!==-1);
+    let inv=0;
+    for(let i=0;i<tiles.length;i++)for(let j=i+1;j<tiles.length;j++) if(tiles[i]>tiles[j]) inv++;
+    if(N%2===1) return inv%2===0;
+    const {r} = idxToRC(blankIndex);
+    const rowFromBottom = N - r;
+    return (rowFromBottom%2===0)? inv%2===1 : inv%2===0;
+  }
+
+  function shuffled(blankIndex){
+    let arr = Array.from({length:SIZE}, (_,i)=>i);
+    arr[blankIndex] = -1;
+    for(let i=arr.length-1;i>0;i--){
+      const j=(Math.random()*(i+1))|0; [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    if(!isSolvable(arr, blankIndex)){
+      const i = arr.findIndex(x=>x!==-1);
+      const j = arr.findIndex((x,k)=>x!==-1 && k!==i);
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  function allPlacedExceptBlank(arr){
+    for(let i=0;i<SIZE;i++){
+      if(arr[i]!==-1 && arr[i]!==i) return false;
+    }
+    return true;
+  }
+
+  function buildBoard(){
+    board.innerHTML='';
+    for(let i=0;i<SIZE;i++){
+      const cell = document.createElement('div');
+      cell.className='tile';
+      const piece = document.createElement('div');
+      piece.className='piece';
+      piece.dataset.index=i;
+      cell.appendChild(piece);
+      board.appendChild(cell);
+    }
+  }
+
+  function applyBackgrounds(){
+    const pieces = board.querySelectorAll('.piece');
+    pieces.forEach((el,i)=>{
+      const val = state[i];
+      if(val===-1){
+        el.classList.add('blank');
+        el.style.backgroundImage='none';
+      }else{
+        el.classList.remove('blank');
+        const r=Math.floor(val/N), c=val%N;
+        const posX = (c/(N-1))*100, posY=(r/(N-1))*100;
+        el.style.backgroundImage=`url("${imgURL}")`;
+        el.style.backgroundPosition = posX+'% '+posY+'%';
+        el.style.backgroundSize = (N*100)+'% '+(N*100)+'%';
+      }
+      el.style.transform='translate(0,0)';
+    });
+  }
+
+  function neighborsOfEmpty(arr){
+    const ei = arr.indexOf(-1);
+    const {r,c}=idxToRC(ei);
+    const list=[];
+    if(r>0) list.push(rcToIdx(r-1,c));
+    if(r<N-1) list.push(rcToIdx(r+1,c));
+    if(c>0) list.push(rcToIdx(r,c-1));
+    if(c<N-1) list.push(rcToIdx(r,c+1));
+    return {emptyIndex:ei, neighbors:list};
+  }
+
+  function onPointerDown(e){
+    const el = e.currentTarget;
+    const i = parseInt(el.dataset.index,10);
+    const {emptyIndex, neighbors} = neighborsOfEmpty(state);
+    if(!neighbors.includes(i)) return;
+    const {r:er,c:ec}=idxToRC(emptyIndex);
+    const {r:tr,c:tc}=idxToRC(i);
+    let dir=null;
+    if(er===tr) dir = ec>tc ? 'right':'left';
+    else if(ec===tc) dir = er>tr ? 'down':'up';
+    if(!dir) return;
+    el.setPointerCapture && el.setPointerCapture(e.pointerId);
+    dragging = {i, el, dir, startX:e.clientX, startY:e.clientY};
+  }
+
+  function onPointerMove(e){
+    if(!dragging) return;
+    const dx = e.clientX - dragging.startX;
+    const dy = e.clientY - dragging.startY;
+    const step = board.clientWidth / N;
+    let tx=0, ty=0;
+    if(dragging.dir==='left' || dragging.dir==='right'){
+      tx = Math.max(Math.min(dx, step), -step);
+    }else{
+      ty = Math.max(Math.min(dy, step), -step);
+    }
+    dragging.el.style.transform = `translate(${tx}px,${ty}px)`;
+  }
+
+  function onPointerUp(e){
+    if(!dragging) return;
+    const el = dragging.el;
+    const m = el.style.transform;
+    const step = board.clientWidth / N;
+    let moved=false;
+    if(m && m.startsWith('translate(')){
+      const v=m.replace('translate(','').replace(')','').split(',');
+      const tx=parseFloat(v[0]); const ty=parseFloat(v[1]);
+      moved = (Math.abs(tx)>step/2)||(Math.abs(ty)>step/2);
+    }
+    el.style.transform='translate(0,0)';
+    if(moved) swapWithEmpty(dragging.i);
+    dragging=null;
+  }
+
+  function swapWithEmpty(i){
+    const {emptyIndex} = neighborsOfEmpty(state);
+    const next=[...state];
+    [next[emptyIndex], next[i]] = [next[i], next[emptyIndex]];
+    state = next;
+    applyBackgrounds();
+    if(allPlacedExceptBlank(state)){
+      stopTimer();
+      saveBest();
+      showToast('완료! 기록 저장됨');
+    }
+  }
+
+  function startTimer(){
+    startTime = Date.now();
+    if(timerId) cancelAnimationFrame(timerId);
+    const tick = ()=>{
+      const ms = Date.now()-startTime;
+      setTime(ms);
+      timerId = requestAnimationFrame(tick);
+    };
+    timerId = requestAnimationFrame(tick);
+  }
+  function stopTimer(){
+    if(timerId){ cancelAnimationFrame(timerId); timerId=null; }
+  }
+  function saveBest(){
+    const ms = Date.now()-startTime;
+    const best = parseInt(localStorage.getItem(BEST_KEY)||'0',10);
+    if(!best || ms<best){
+      localStorage.setItem(BEST_KEY, String(ms));
+      setBest(ms);
+    }
+  }
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.style.display='block';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=> toast.style.display='none', 1400);
+  }
+
+  function shuffleAndStart(){
+    const blank = (Math.random()*SIZE)|0;
+    state = shuffled(blank);
+    applyBackgrounds();
+    stopTimer();
+    setTime(0);
+    startTimer();
+  }
+
+  function loadImageAndStart(){
+    pickAnimal();
+    // Preload image to ensure background slicing shows correctly
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>{
+      buildBoard();
+      attachEvents();
+      shuffleAndStart();
+    };
+    img.onerror = ()=>{
+      console.warn('이미지 로드 실패:', imgURL);
+      if(animals.length>1){
+        animals.splice(animals.findIndex(a=>a.url===imgURL),1);
+        if(animals.length) return loadImageAndStart();
+      }
+      imgURL='https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/640px-No-Image-Placeholder.svg.png'; imgName='(placeholder)';
+      // fallback: try again with a different animal
+      console.warn('이미지 로드 실패, 다른 동물로 재시도');
+      setTimeout(loadImageAndStart, 100);
+    };
+    img.src = imgURL + (imgURL.includes('?')?'&':'?') + 'cacheBust=' + Date.now();
+  }
+
+  function attachEvents(){
+    const pieces = board.querySelectorAll('.piece');
+    pieces.forEach(el=>{
+      el.onpointerdown = onPointerDown;
+    });
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  }
+
+  btnShuffle.onclick = ()=> shuffleAndStart();
+  btnNew.onclick = ()=>{
+    stopTimer();
+    setTime(0);
+    board.innerHTML='';
+    loadImageAndStart();
+  };
+
+  // init
+  setTime(0);
+  loadImageAndStart();
+})();
+</script>
+</body>
+</html>
