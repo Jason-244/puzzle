@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Jason's 3x3 Photo Puzzle</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .blank-tile{background:repeating-linear-gradient(45deg,#fde047,#fde047 10px,#fbbf24 10px,#fbbf24 20px);box-shadow:inset 0 0 0 3px rgba(15,23,42,.25)}
+    .card{border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .card:hover{box-shadow:0 8px 24px rgba(0,0,0,.08)}
+    .thumb{width:100%;height:140px;object-fit:cover;display:block}
+  </style>
+</head>
+<body class="bg-slate-100">
+<div id="root"></div>
+
+<script type="text/babel">
+const {useEffect,useMemo,useRef,useState} = React;
+const N=3, SIZE=N*N, tileSize=320, tileStep=tileSize/N;
+
+const idxToRC = (i)=>({r:Math.floor(i/N), c:i%N});
+const rcToIdx = (r,c)=>r*N+c;
+
+function isSolvable(arr, blankIndex){
+  const tiles = arr.filter(x=>x!==-1);
+  let inv=0;
+  for(let i=0;i<tiles.length;i++)for(let j=i+1;j<tiles.length;j++) if(tiles[i]>tiles[j]) inv++;
+  if(N%2===1) return inv%2===0;
+  const {r}=idxToRC(blankIndex); const rowFromBottom=N-r;
+  return (rowFromBottom%2===0)? inv%2===1 : inv%2===0;
+}
+function shuffledPositions(blankIndex){
+  let arr=Array.from({length:SIZE},(_,i)=>i); arr[blankIndex]=-1;
+  for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  if(!isSolvable(arr, blankIndex)){
+    const i=arr.findIndex(x=>x!==-1); const j=arr.findIndex((x,k)=>x!==-1 && k!==i); [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+function neighborsOfEmpty(state){
+  const ei = state.indexOf(-1); const {r,c}=idxToRC(ei);
+  const neigh=[]; if(r>0)neigh.push(rcToIdx(r-1,c)); if(r<N-1)neigh.push(rcToIdx(r+1,c));
+  if(c>0)neigh.push(rcToIdx(r,c-1)); if(c<N-1)neigh.push(rcToIdx(r,c+1));
+  return {emptyIndex:ei, neigh};
+}
+function fmt(ms){ const s=Math.floor(ms/1000); const m=Math.floor(s/60); const ss=s%60; return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; }
+
+// Minimal but nicer animal thumbs (still vector), can be replaced later
+const animals = [
+  {name:'Amur Leopard', url:'https://images.unsplash.com/photo-1546182990-dffeafbe841d?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Javan Rhino', url:'https://images.unsplash.com/photo-1546181161-72d7b37bcd79?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Vaquita', url:'https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Kakapo', url:'https://images.unsplash.com/photo-1484406566174-9da000fda645?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Sumatran Orangutan', url:'https://images.unsplash.com/photo-1535930749574-1399327ce78f?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Saola', url:'https://images.unsplash.com/photo-1508672019048-805c876b67e2?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Hawksbill Turtle', url:'https://images.unsplash.com/photo-1544551763-7ef42000448e?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Mountain Gorilla', url:'https://images.unsplash.com/photo-1564349683136-77e08dba1ef7?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Philippine Eagle', url:'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?q=80&w=1200&auto=format&fit=crop'},
+  {name:'Sunda Pangolin', url:'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop'},
+];
+
+function App(){
+  const [boardPicker,setBoardPicker]=useState(true);
+  const [previewMode,setPreviewMode]=useState(false);
+  const [imgUrl,setImgUrl]=useState('');
+  const [title,setTitle]=useState('');
+  const [state,setState]=useState([]);
+  const [running,setRunning]=useState(false);
+  const [startTime,setStartTime]=useState(0);
+  const [elapsed,setElapsed]=useState(0);
+  const [showWin,setShowWin]=useState(false);
+  const timerRef=useRef(null);
+  const dragRef=useRef(null);
+
+  useEffect(()=>{
+    if(running){ timerRef.current=setInterval(()=>setElapsed(Date.now()-startTime),250); }
+    else if(timerRef.current){ clearInterval(timerRef.current); timerRef.current=null; }
+    return ()=> timerRef.current && clearInterval(timerRef.current);
+  },[running,startTime]);
+
+  const startPuzzle=()=>{
+    const blank = Math.floor(Math.random()*SIZE);
+    setState(shuffledPositions(blank));
+    setRunning(true);
+    setStartTime(Date.now());
+    setElapsed(0);
+    setPreviewMode(false);
+    setBoardPicker(false);
+  };
+
+  const onPick=(name,url)=>{ setTitle(name); setImgUrl(url); setPreviewMode(true); setBoardPicker(false); };
+
+  const tiles = useMemo(()=>{
+    if(!imgUrl || state.length!==SIZE) return [];
+    const positions=[];
+    for(let i=0;i<SIZE;i++){ const r=Math.floor(i/N), c=i%N; const bgX=(c/(N-1))*100, bgY=(r/(N-1))*100; positions.push({bgX,bgY}); }
+    return state.map((tile,i)=> tile===-1? {i,empty:true} : {i,empty:false,bgPos:positions[tile]} );
+  },[imgUrl,state]);
+
+  const moveTile=(tileIndex)=>{
+    setState(prev=>{
+      const {emptyIndex,neigh}=neighborsOfEmpty(prev);
+      if(!neigh.includes(tileIndex)) return prev;
+      const next=[...prev]; [next[emptyIndex],next[tileIndex]]=[next[tileIndex],next[emptyIndex]];
+      // check complete
+      let ok=true; for(let i=0;i<SIZE-1;i++){ if(next[i]!==i){ ok=false; break; } }
+      if(ok && next[SIZE-1]===-1){ setRunning(false); setShowWin(true); }
+      return next;
+    });
+  };
+
+  const onPointerDown=(e,i)=>{
+    const {emptyIndex,neigh}=neighborsOfEmpty(state);
+    if(!neigh.includes(i)) return;
+    const dir=(()=>{ const {r:er,c:ec}=idxToRC(emptyIndex); const {r:tr,c:tc}=idxToRC(i);
+      if(er===tr) return ec>tc?'right':'left'; if(ec===tc) return er>tr?'down':'up'; return null; })();
+    if(!dir) return;
+    const el=e.currentTarget; el.setPointerCapture?.(e.pointerId);
+    dragRef.current={startX:e.clientX,startY:e.clientY,dir,i,el};
+  };
+  const onPointerMove=(e)=>{
+    const info=dragRef.current; if(!info) return;
+    const dx=e.clientX-info.startX, dy=e.clientY-info.startY; let tx=0,ty=0;
+    if(info.dir==='left'||info.dir==='right') tx=Math.max(Math.min(dx,tileStep),-tileStep);
+    else ty=Math.max(Math.min(dy,tileStep),-tileStep);
+    info.el.style.transform=`translate(${tx}px,${ty}px)`;
+  };
+  const onPointerUp=()=>{
+    const info=dragRef.current; if(!info) return;
+    const style=info.el.style; const m=style.transform;
+    let moved=false; if(m && m.startsWith('translate(')){ const v=m.replace('translate(','').replace(')','').split(','); const tx=parseFloat(v[0]); const ty=parseFloat(v[1]); moved = (Math.abs(tx)>tileStep/2)||(Math.abs(ty)>tileStep/2); }
+    style.transform='translate(0,0)';
+    if(moved) moveTile(info.i);
+    dragRef.current=null;
+  };
+
+  // Photo mode handlers
+  const fileRef = useRef(null);
+  const onFile=(e)=>{
+    const f=e.target.files && e.target.files[0]; if(!f) return;
+    const r=new FileReader(); r.onload=()=>{ setImgUrl(r.result); setTitle(f.name||'Photo'); setPreviewMode(true); setBoardPicker(false); };
+    r.readAsDataURL(f);
+  };
+  const onPasteUrl=()=>{
+    const url = prompt('이미지 URL을 붙여넣기 하세요 (https://...)');
+    if(url){ setImgUrl(url); setTitle('Custom Image'); setPreviewMode(true); setBoardPicker(false); }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-100 to-white text-slate-800"
+         onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+      <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/70 backdrop-blur sticky top-0 z-20">
+        <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Jason's 3x3 Photo Puzzle</h1>
+        <div className="text-sm tabular-nums">{running?fmt(elapsed):'00:00'}</div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 pb-24 pt-6">
+        {boardPicker && (
+          <section>
+            <h2 className="text-xl font-bold mb-3">판을 선택하세요 (사진급 퀄리티 지원)</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {/* Photo mode */}
+              <div className="card p-4 flex flex-col gap-3">
+                <b>내 사진으로 만들기</b>
+                <button className="px-3 py-2 rounded-md bg-slate-800 text-white" onClick={()=>fileRef.current.click()}>사진 파일 선택</button>
+                <button className="px-3 py-2 rounded-md border border-slate-300" onClick={onPasteUrl}>이미지 URL 붙여넣기</button>
+                <input type="file" accept="image/*" capture="environment" className="hidden" ref={fileRef} onChange={onFile}/>
+                <p className="text-xs text-slate-500">휴대폰 카메라로 촬영도 가능합니다.</p>
+              </div>
+              {animals.map((a,i)=>(
+                <button key={i} className="card text-left" onClick={()=>onPick(a.name,a.url)}>
+                  <img className="thumb" src={a.url} alt={a.name}/>
+                  <div className="p-2 text-sm">{a.name}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {previewMode && !boardPicker && (
+          <section className="grid md:grid-cols-2 gap-6 items-center">
+            <div className="card">
+              <img src={imgUrl} alt={title} className="w-full h-[340px] object-cover"/>
+            </div>
+            <div className="flex flex-col gap-4">
+              <h3 className="text-2xl font-bold">{title}</h3>
+              <p className="text-slate-600">아래 버튼을 누르면 퍼즐을 시작합니다. (빈 칸은 노란 스트라이프로 표시)</p>
+              <div className="flex gap-3">
+                <button className="px-4 py-3 rounded-xl bg-slate-800 text-white font-semibold" onClick={startPuzzle}>Start Puzzle</button>
+                <button className="px-4 py-3 rounded-xl border border-slate-300" onClick={()=>{setBoardPicker(true); setPreviewMode(false);}}>다른 판 선택</button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!previewMode && !boardPicker && (
+          <section className="flex flex-col items-center gap-3">
+            <div className="text-slate-600">인접 조각을 드래그/탭하여 이동하세요.</div>
+            <div className="relative bg-white rounded-3xl p-0 shadow-lg border border-slate-200 select-none gap-0 overflow-hidden"
+                 style={{width:tileSize,height:tileSize,display:'grid',gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`}}>
+              {tiles.map((t)=> (
+                <div key={t.i}
+                     className={t.empty? 'blank-tile':'bg-transparent'}
+                     style={{
+                       width:tileSize/N, height:tileSize/N,
+                       backgroundImage: t.empty? 'none': `url(${imgUrl})`,
+                       backgroundSize: `${N*100}% ${N*100}%`,
+                       backgroundPosition: t.empty? undefined : `${t.bgPos.bgX}% ${t.bgPos.bgY}%`,
+                       touchAction:'none', transition:'transform 120ms ease', cursor:t.empty? 'default':'grab'
+                     }}
+                     onClick={()=>moveTile(t.i)}
+                     onPointerDown={(e)=>onPointerDown(e,t.i)}></div>
+              ))}
+            </div>
+            <div className="text-sm text-slate-500">완성 시 자동으로 기록됩니다.</div>
+          </section>
+        )}
+
+        {showWin && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-30" onClick={()=>setShowWin(false)}>
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 max-w-xl w-[92vw] p-4" onClick={(e)=>e.stopPropagation()}>
+              <div className="rounded-2xl overflow-hidden mb-3">
+                <img src={imgUrl} alt={title} className="w-full h-[260px] object-cover"/>
+              </div>
+              <h3 className="text-xl font-bold mb-1">Clear! — {title}</h3>
+              <p className="text-slate-600 mb-4">기록: <span className="font-semibold tabular-nums">{fmt(elapsed)}</span></p>
+              <div className="flex items-center gap-2 justify-end">
+                <button className="px-4 py-2 rounded-xl bg-slate-800 text-white font-semibold" onClick={()=>{setShowWin(false); setBoardPicker(true); setPreviewMode(false); setState([]);}}>다른 판 선택</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+      <footer className="text-center text-xs text-slate-500 py-10">© 2025 Jason — 3x3 Photo Puzzle</footer>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
